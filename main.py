@@ -2,11 +2,10 @@ from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.properties import (ObjectProperty, ListProperty, 
     NumericProperty)
-from pygame import image as pyg_image
 from noise import snoise2
 from kivy.clock import Clock
 from kivy.graphics.texture import Texture
-from kivy.graphics import Rectangle, Color
+from kivy.graphics import Rectangle
 from kivy.core.image import ImageData
 from kivy.vector import Vector
 
@@ -24,8 +23,6 @@ class RootWidget(Widget):
         Clock.schedule_once(self.setup)
 
     def setup(self, dt):
-        #self.add_noise(8, 16., (0., .2, .8), (0., .3, .7))
-        #self.add_noise(1, 16., (.5, .5, 0.), (.3, 1., .6))
         self.add_noise(16, 16., (.3, .7, 0.), (0., 0., 0.))
         self.add_noise(8, 16., (.3, .5, 0.), (.3, .3, 0.))
         self.add_noise(12, 4., (.9, .9, .9), (1., 1., 1.))
