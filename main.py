@@ -15,6 +15,63 @@ from math import floor
 def lerp(a, p, q): 
     return tuple((_p + ((_q - _p) * a)) for _p, _q in zip(p, q))
 
+
+class NoiseGenerator(object):
+
+    def step_between_colors(self, color1, color2, number_of_steps):
+        colors = []
+        distance_between_steps = 1/(number_of_steps-1)
+        for x in range(number_of_steps):
+            new_color = lerp(distance_between_steps*x, color1, color2)
+            colors.append(new_color)
+        color_print = [[color/255 for color in z] for z in colors]
+        return colors
+
+    def generate_noise_circle(self, octaves, freq, color_value_list, 
+        threshold, offset, radius, size, do_alpha):
+        data = ''
+        freq = freq * octaves
+        for x in range(size[0]):
+            for y in range(size[1]):
+                noise_val = snoise2((x+offset[0]) / freq, (y+offset[1]) / freq, octaves)
+                if noise_val < 0:
+                    noise_val = 0
+                alpha = self.test_threshold(noise_val, threshold, do_alpha)
+                color = None
+                if not self.test_in_circle(x, y, size, radius):
+                    color = [0, 0, 0]
+                    alpha = 0
+                else:
+                    for color_range_tuple in color_value_list:
+                        color_range = color_range_tuple[1]
+                        if color_range[0] <= noise_val <= color_range[1]:
+                            color = [z*255 for z in color_range_tuple[0]]
+                            break
+                color.append(alpha)
+                for each in color:
+                    data = data + chr(int(each))
+        return self.generate_texture(data, size, 'rgba')
+
+
+    def test_threshold(self, noise_val, threshold, do_alpha):
+        if noise_val < threshold:
+            return 0
+        elif do_alpha:
+            return noise_val*255
+        else:
+            return 255
+
+    def test_in_circle(self, x, y, size, radius):
+        if Vector(x, y).distance((size[0]/2., size[1]/2.)) > radius:
+            return False
+        else:
+            return True
+
+    def generate_texture(self, data, size, mode, mipmap=False):
+        idata = ImageData(size[0], size[1], mode, data)
+        return Texture.create_from_data(idata, mipmap)
+
+
 class RootWidget(Widget):
     gen_texture = ObjectProperty(None)
     noise_size = ListProperty((128, 128))
@@ -24,27 +81,24 @@ class RootWidget(Widget):
 
     def __init__(self, **kwargs):
         super(RootWidget, self).__init__(**kwargs)
+        self.n_gen = NoiseGenerator()
         Clock.schedule_once(self.setup)
 
     def setup(self, dt):
-        
-        self.add_noise(8, 5., 12, (1., 0.521568627, .231372549), (0., 1., .2), 
-            allow_negatives=False)
-        #self.add_noise(6, 5., 4, (1., 0.521568627, .231372549), (0., 1., .2), 
-        #    allow_negatives=False, threshold=.6)
-        #self.add_noise(2, .5, 16, (0., 0., .5), (0., 0., 1.), threshold=.5, 
-        #    offset=(50, 50), func = Ridged(2))
-        #self.add_noise(8, 16., 2, (.7, .7, .7), (1., 1., 1.), threshold=.6)
-        #self.add_noise(4, 16., 2, (0., .2, .9), (0., .5, .2))
+        color_value_list = [((1., 0.521568627, .231372549), (0., .25)),
+        ((0., 1., .2), (.25, 1.))]
+        self.add_noise(4, 16., color_value_list, self.noise_radius, 
+            self.noise_size)
 
-    def add_noise(self, octaves, freq, number_of_steps, color1, color2, 
-        threshold=0., offset = (0, 0), allow_negatives=True, func=None):
+    def add_noise(self, octaves, freq, color_value_list, radius, size, 
+        do_alpha=False, threshold=0., offset = (0, 0)):
         self.noise_objects.append({
-            'oct': octaves, 'freq': freq, 'number_of_steps': number_of_steps, 
-            'color1': color1, 'color2': color2, 'threshold': threshold,
+            'oct': octaves, 'freq': freq, 
+            'color_value_list': color_value_list,
+            'threshold': threshold,
             'offset': offset,
-            'texture': self.generate_texture(octaves, freq, number_of_steps, 
-                color1, color2, threshold, offset, allow_negatives, func=func)})
+            'texture': self.n_gen.generate_noise_circle(octaves, freq, 
+                color_value_list, threshold, offset, radius, size, do_alpha)})
         self.noise_added += 1
 
     def on_size(self, instance, value):
@@ -64,51 +118,6 @@ class RootWidget(Widget):
                 Rectangle(pos=(self.size[0]/2. - self.noise_size[0]/2., 
                     self.size[1]/2. - self.noise_size[1]/2.),
                     size= self.noise_size, texture=noise['texture'])
-
-    def convert_noise_to_texture_with_color(self, octaves, 
-        freq, number_of_steps, color1, color2, threshold, offset):
-        noise_size = self.noise_size
-        data = ''
-        radius = self.noise_radius
-        freq = freq * octaves
-        colors_to_use = self.step_between_colors(
-            color1, color2, number_of_steps)
-        gradient_step = 1/number_of_steps
-        for x in range(noise_size[0]):
-            for y in range(noise_size[1]):
-                noise_val = snoise2((x+offset[0]) / freq, (y+offset[1]) / freq, octaves)
-                alpha = 255
-                if Vector(x, y).distance(
-                    (noise_size[0]/2., noise_size[1]/2.)) > radius:
-                    alpha = 0
-                if noise_val < threshold:
-                    alpha = 0
-                color_index = floor((noise_val)/gradient_step)
-                if color_index == number_of_steps:
-                    color_index = number_of_steps - 1
-                noise_tuple = [z for z in colors_to_use[int(color_index)]]
-                for each in noise_tuple:
-                    data = data + chr(int(each))
-                data = data + chr(alpha)
-        idata = ImageData(self.noise_size[0], self.noise_size[1],
-            'rgba', data)
-        return Texture.create_from_data(idata, mipmap=False)
-                
-    def step_between_colors(self, color1, color2, number_of_steps):
-        colors = []
-        distance_between_steps = 1/(number_of_steps-1)
-        for x in range(number_of_steps):
-            new_color = lerp(distance_between_steps*x, color1, color2)
-            colors.append(new_color)
-        color_print = [[color/255 for color in z] for z in colors]
-        return colors
-
-    def generate_texture(self, octaves, freq, number_of_steps, color1, color2,
-        threshold, offset, allow_negatives, func = None):
-        color1 = [int(x*255) for x in color1]
-        color2 = [int(x*255) for x in color2]
-        return self.convert_noise_to_texture_with_color(octaves, freq,
-            number_of_steps, color1, color2, threshold, offset)
 
 class TestApp(App):
 
